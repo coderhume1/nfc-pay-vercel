@@ -9,14 +9,14 @@ datasource db {
 }
 
 model Device {
-  /// deviceId (e.g., ESP32 MAC)
-  id         String     @id
+  /// deviceId (we use WiFi MAC from the ESP32)
+  id         String     @id @db.VarChar(32)
   terminalId String
   storeCode  String?
   lastSeenAt DateTime?
   writeJobs  WriteJob[]
 
-  @@index([terminalId])
+  @@index([storeCode])
 }
 
 model Session {
