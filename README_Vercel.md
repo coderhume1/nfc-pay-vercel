@@ -55,3 +55,12 @@
 
 ## 📶 SoftAP Store Code
 - The SoftAP provisioning page now lets you save an optional **Store Code**. The firmware will pass this as `X-Store-Code` during bootstrap.
+
+
+## Auto-write on "Generate Payment"
+
+- When you generate a payment from **/p/[terminalId] → Operator Tools → Generate Payment**, the ESP32 now polls a new endpoint `/api/v1/sessions/latest` and will automatically write the checkout URL to the NFC tag and start tracking that session.
+- Firmware expects these headers on all `/api/v1/*` calls:
+  - `X-API-Key: <API_KEY>`
+  - `X-Device-Id: <device MAC>`
+- Make sure `API_KEY` is set in your Vercel project env vars, and that your device is enrolled in **Admin → Devices**.

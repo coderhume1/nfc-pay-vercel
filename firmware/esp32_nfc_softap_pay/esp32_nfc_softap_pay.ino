@@ -42,6 +42,8 @@ Adafruit_PN532 nfc(PN532_SS);
 WiFiClientSecure tls;
 HTTPClient http;
 String terminalId, sessionId, checkoutUrl;
+String lastSeenLatestId=""; 
+unsigned long lastLatestPoll=0;
 
 // NeoPixel
 Adafruit_NeoPixel strip(WS_COUNT, WS_PIN, NEO_GRB + NEO_KHZ800);
@@ -320,6 +322,24 @@ String getSessionStatus(const String& sid){
   return status;
 }
 
+bool getLatestPendingSessionId(const String& term, String& outId){
+  String url = joinUrl(BASE_URL, (String("/api/v1/sessions/latest?terminalId=")+term).c_str());
+  http.begin(tls, url);
+  setupHttp(http);
+  int code = http.GET();
+  String body = http.getString();
+  if (code==200){
+    String sid = extractJsonValue(body, "id");
+    if(sid.length()){ outId=sid; http.end(); return true; }
+  } else {
+    Serial.printf("[SESSION.LATEST] %s => %d\n", url.c_str(), code);
+    if (body.length()) Serial.printf("[SESSION.LATEST] body: %s\n", snippet(body).c_str());
+  }
+  http.end();
+  return false;
+}
+
+
 // ====== Indicators / main loop ======
 void applyVisuals(){
   switch (payState){
@@ -427,4 +447,31 @@ void loop(){
       payState = PayState::ERROR;
     }
   }
+
+  // Check for a newly generated admin payment (latest pending session) every 2s
+  if (millis() - lastLatestPoll >= 2000 && terminalId.length()){
+    lastLatestPoll = millis();
+    String latestId;
+    if (getLatestPendingSessionId(terminalId, latestId)){
+      if (latestId.length() && latestId != sessionId && latestId != lastSeenLatestId){
+        Serial.printf("[SESSION.LATEST] New pending session detected: %s\n", latestId.c_str());
+        // Write (or re-write) the tag with checkout URL so the customer can scan
+        String urlToWrite = checkoutUrl.length() ? fixCheckoutUrl(checkoutUrl)
+                                                 : joinUrl(BASE_URL, (String("/p/")+terminalId).c_str());
+        payState = PayState::WRITING;
+        bool ok = writeNdefUrlVerified(urlToWrite);
+        if(ok){
+          Serial.printf("[NDEF] wrote & verified %s\n", urlToWrite.c_str());
+          sessionId = latestId;
+          lastSeenLatestId = latestId;
+          payState = PayState::PENDING;
+        } else {
+          Serial.println("[NDEF] auto write failed");
+          payState = PayState::ERROR;
+        }
+      }
+    }
+  }
+
 }
+
