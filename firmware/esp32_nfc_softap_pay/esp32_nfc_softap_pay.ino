@@ -337,7 +337,57 @@ bool getLatestPendingSessionId(const String& term, String& outId){
   }
   http.end();
   return false;
+  // --- SESSION list fallback when /latest is not available ---
+  if (true) {
+    String url2 = joinUrl(BASE_URL, "/api/v1/sessions");
+    http.begin(tls, url2);
+    setupHttp(http);
+    int code2 = http.GET();
+    String body2 = http.getString();
+    if (code2 == 200){
+      String idTmp;
+      if (extractLatestPendingFromSessionsList(body2, term, idTmp)){
+        outId = idTmp; http.end(); return true;
+      }
+    } else {
+      Serial.printf("[SESSION.LIST] %s => %d\n", url2.c_str(), code2);
+      if (body2.length()) Serial.printf("[SESSION.LIST] body: %s\n", snippet(body2).c_str());
+    }
+    http.end();
+  }
+  // --- end fallback ---
+  return false;
 }
+
+
+// Fallback: scan /api/v1/sessions response (array) for latest pending for this terminal
+bool extractLatestPendingFromSessionsList(const String& json, const String& term, String& outId){
+  // naive scan: find the first object containing "terminalId":"<term>" and "status":"pending"
+  int pos = 0;
+  while (true){
+    int ti = json.indexOf(String("\"terminalId\":\"")+term+String("\""), pos);
+    if (ti < 0) return false;
+    // object start boundary: previous '{'
+    int objStart = json.lastIndexOf('{', ti);
+    int objEnd = json.indexOf('}', ti);
+    if (objStart < 0 || objEnd < 0) { pos = ti + 1; continue; }
+    String obj = json.substring(objStart, objEnd+1);
+    if (obj.indexOf("\"status\":\"pending\"") >= 0){
+      // grab id
+      int idKey = obj.indexOf("\"id\":\"");
+      if (idKey >= 0){
+        int idStart = idKey + 7; // len of "id":"
+        int idEnd = obj.indexOf("\"", idStart);
+        if (idEnd > idStart){
+          outId = obj.substring(idStart, idEnd);
+          return true;
+        }
+      }
+    }
+    pos = ti + 1;
+  }
+}
+
 
 
 // ====== Indicators / main loop ======
