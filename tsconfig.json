@@ -22,7 +22,8 @@
       ],
       "@/lib/*": [
         "src/lib/*"
-      ]
+      ],
+      "@/components/*": ["src/components/*"]
     },
     "types": [
       "node"
