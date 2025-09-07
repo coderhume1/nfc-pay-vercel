@@ -1,24 +1,42 @@
 {
   "info": {
-    "name": "nfc-pay (autowrite)",
-    "_postman_id": "nfc-pay-autowrite",
+    "name": "NFC Pay Starter (Vercel)",
+    "_postman_id": "12345678-aaaa-bbbb-cccc-1234567890ab",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://<project>.vercel.app"
+    },
+    {
+      "key": "apiKey",
+      "value": "esp32_test_api_key_123456"
+    },
+    {
+      "key": "deviceId",
+      "value": "A1B2C3D4E5F6"
+    }
+  ],
   "item": [
     {
-      "name": "Bootstrap (register device)",
+      "name": "Bootstrap",
       "request": {
         "method": "GET",
         "header": [
           {
-            "key": "x-device-key",
-            "value": "{{DEVICE_KEY}}"
+            "key": "X-API-Key",
+            "value": "{{apiKey}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
           }
         ],
         "url": {
-          "raw": "{{BASE_URL}}/api/v1/bootstrap",
+          "raw": "{{baseUrl}}/api/v1/bootstrap",
           "host": [
-            "{{BASE_URL}}"
+            "{{baseUrl}}"
           ],
           "path": [
             "api",
@@ -29,94 +47,70 @@
       }
     },
     {
-      "name": "Generate Payment + autowrite",
+      "name": "Create Session",
       "request": {
         "method": "POST",
         "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          },
           {
             "key": "Content-Type",
             "value": "application/json"
           }
         ],
         "url": {
-          "raw": "{{BASE_URL}}/api/v1/payments/generate",
+          "raw": "{{baseUrl}}/api/v1/sessions",
           "host": [
-            "{{BASE_URL}}"
+            "{{baseUrl}}"
           ],
           "path": [
             "api",
             "v1",
-            "payments",
-            "generate"
+            "sessions"
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{\"amount\": 500, \"currency\": \"PKR\", \"label\": \"Tea\", \"autoWrite\": true}"
+          "raw": "{}"
         }
       }
     },
     {
-      "name": "Device Next Job",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "x-device-key",
-            "value": "{{DEVICE_KEY}}"
-          }
-        ],
-        "url": {
-          "raw": "{{BASE_URL}}/api/v1/device/next",
-          "host": [
-            "{{BASE_URL}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "device",
-            "next"
-          ]
-        }
-      }
-    },
-    {
-      "name": "Device Ack",
+      "name": "Create Payment (alias)",
       "request": {
         "method": "POST",
         "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{apiKey}}"
+          },
           {
             "key": "Content-Type",
             "value": "application/json"
           }
         ],
         "url": {
-          "raw": "{{BASE_URL}}/api/v1/device/ack",
+          "raw": "{{baseUrl}}/api/v1/payments",
           "host": [
-            "{{BASE_URL}}"
+            "{{baseUrl}}"
           ],
           "path": [
             "api",
             "v1",
-            "device",
-            "ack"
+            "payments"
           ]
         },
         "body": {
           "mode": "raw",
-          "raw": "{\"jobId\": \"REPLACE\", \"ok\": true}"
+          "raw": "{\"terminalId\":\"STORE01-0001\",\"amount\":500,\"currency\":\"USD\"}"
         }
       }
-    }
-  ],
-  "variable": [
-    {
-      "key": "BASE_URL",
-      "value": "https://YOUR-VERCEL-APP.vercel.app"
-    },
-    {
-      "key": "DEVICE_KEY",
-      "value": "dev-device-key"
     }
   ]
 }

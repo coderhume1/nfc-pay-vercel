@@ -1,59 +1,36 @@
-// prisma/schema.prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  terminalId String
+  amount     Int
+  currency   String
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([terminalId])
+}
+
 model Device {
-  id        String        @id @default(cuid())
-  name      String
-  key       String        @unique
-  lastSeen  DateTime      @updatedAt
-  jobs      TagWriteJob[]
-  createdAt DateTime      @default(now())
+  deviceId   String   @id
+  storeCode  String
+  terminalId String
+  amount     Int      @default(0)
+  currency   String   @default("USD")
+  status     String   @default("new")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
-model Payment {
-  id        String         @id @default(cuid())
-  amount    Int
-  currency  String         @default("PKR")
-  label     String?
-  status    PaymentStatus  @default(PENDING)
-  nfcUri    String?
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  jobs      TagWriteJob[]
-}
-
-enum PaymentStatus {
-  PENDING
-  READY
-  WRITTEN
-  FAILED
-}
-
-model TagWriteJob {
-  id         String    @id @default(cuid())
-  deviceId   String
-  device     Device    @relation(fields: [deviceId], references: [id])
-  type       String    // e.g. NDEF_URI
-  payload    Json
-  status     JobStatus @default(QUEUED)
-  paymentId  String?
-  payment    Payment?  @relation(fields: [paymentId], references: [id])
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  @@index([deviceId, status, createdAt])
-}
-
-enum JobStatus {
-  QUEUED
-  SENT
-  ACK_OK
-  ACK_ERR
+model TerminalSequence {
+  storeCode String @id
+  last      Int    @default(0)
 }
