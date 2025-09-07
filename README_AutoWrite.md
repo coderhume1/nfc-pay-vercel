@@ -26,3 +26,6 @@ npx ts-node prisma/seed.ts
 
 ## Firmware
 See `firmware/device-writer` for a ready PlatformIO project for ESP32 + PN532 (I2C). Set `WIFI_SSID`, `WIFI_PASS`, `BASE_URL`, and `DEVICE_KEY` in `config.h`.
+
+## Device Writer SoftAP + Factory Reset
+The firmware now includes a config portal (SoftAP) and two factory reset paths (button-hold at boot or HTTP `/reset`). See `firmware/device-writer/README.md` for details.

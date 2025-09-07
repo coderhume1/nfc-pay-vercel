@@ -3,9 +3,13 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Wire.h>
+#include <WebServer.h>
 #include <Adafruit_PN532.h>
 #include <Adafruit_NeoPixel.h>
+
 #include "config.h"
+#include "config_store.h"
+#include "portal.h"
 
 // --- PN532 over I2C ---
 Adafruit_PN532 nfc(PN532_I2C_ADDRESS);
@@ -24,17 +28,10 @@ static void ledsFill(uint32_t color) {
   pixels.show();
 }
 
-static uint32_t colorRGB(uint8_t r, uint8_t g, uint8_t b) {
-  return pixels.Color(r, g, b);
-}
+static uint32_t colorRGB(uint8_t r, uint8_t g, uint8_t b) { return pixels.Color(r,g,b); }
 
 static void ledsPulse(uint32_t color, int flashes=2, int onMs=100, int offMs=100) {
-  for (int n=0; n<flashes; ++n) {
-    ledsFill(color);
-    delay(onMs);
-    ledsFill(0);
-    delay(offMs);
-  }
+  for (int n=0; n<flashes; ++n) { ledsFill(color); delay(onMs); ledsFill(0); delay(offMs); }
 }
 
 // Buzzer control
@@ -44,71 +41,34 @@ static void buzzerInit() {
   ledcAttachPin(BUZZER_PIN, BUZZ_CH);
 #else
   pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, BUZZER_ACTIVE_HIGH ? LOW : HIGH); // idle off
+  digitalWrite(BUZZER_PIN, BUZZER_ACTIVE_HIGH ? LOW : HIGH);
 #endif
 }
-
 static void buzzerOn(int freq = BUZZ_BASE_FREQ) {
 #if BUZZER_IS_PASSIVE
-  // Generate tone
   ledcWriteTone(BUZZ_CH, freq);
 #else
   digitalWrite(BUZZER_PIN, BUZZER_ACTIVE_HIGH ? HIGH : LOW);
 #endif
 }
-
 static void buzzerOff() {
 #if BUZZER_IS_PASSIVE
-  ledcWrite(BUZZ_CH, 0); // stop PWM
+  ledcWrite(BUZZ_CH, 0);
 #else
   digitalWrite(BUZZER_PIN, BUZZER_ACTIVE_HIGH ? LOW : HIGH);
 #endif
 }
-
-static void beep(int ms=120, int freq=2000) {
-  buzzerOn(freq);
-  delay(ms);
-  buzzerOff();
-}
+static void beep(int ms=120, int freq=2000) { buzzerOn(freq); delay(ms); buzzerOff(); }
 
 // Feedback patterns
-static void fxBoot() {
-  ledsPulse(colorRGB(0, 64, 64), 2, 120, 80);   // teal double blink
-  beep(90, 1800);
-}
-
-static void fxWifiOK() {
-  ledsPulse(colorRGB(0, 80, 0), 2, 80, 60);     // green blips
-  beep(70, 2200);
-}
-
-static void fxNoPN532() {
-  ledsPulse(colorRGB(80, 0, 80), 3, 150, 120);  // magenta triple
-  for(int i=0;i<2;i++){ beep(120, 1200); delay(80); }
-}
-
-static void fxWaitingIdle() {
-  // Dim blue idle
-  ledsFill(colorRGB(0, 0, 12));
-}
-
-static void fxNewJob() {
-  // Amber notify + double bip
-  ledsPulse(colorRGB(80, 40, 0), 2, 120, 80);
-  for(int i=0;i<2;i++){ beep(70, 2400); delay(60); }
-}
-
-static void fxSuccess() {
-  // Green flashes + long beep
-  ledsPulse(colorRGB(0, 80, 0), 3, 90, 60);
-  beep(180, 2000);
-}
-
-static void fxError() {
-  // Red flashes + 3 short beeps
-  ledsPulse(colorRGB(90, 0, 0), 3, 140, 90);
-  for(int i=0;i<3;i++){ beep(70, 1500); delay(70); }
-}
+static void fxBoot()        { ledsPulse(colorRGB(0, 64, 64), 2, 120, 80);  beep(90, 1800); }
+static void fxWifiOK()      { ledsPulse(colorRGB(0, 80, 0),  2, 80,  60);  beep(70, 2200); }
+static void fxNoPN532()     { ledsPulse(colorRGB(80, 0, 80), 3, 150, 120); for(int i=0;i<2;i++){ beep(120,1200); delay(80);} }
+static void fxWaitingIdle() { ledsFill(colorRGB(0, 0, 12)); }
+static void fxNewJob()      { ledsPulse(colorRGB(80, 40, 0), 2, 120, 80);  for(int i=0;i<2;i++){ beep(70, 2400); delay(60);} }
+static void fxSuccess()     { ledsPulse(colorRGB(0, 80, 0),  3, 90,  60);  beep(180, 2000); }
+static void fxError()       { ledsPulse(colorRGB(90, 0, 0),  3, 140, 90);  for(int i=0;i<3;i++){ beep(70, 1500); delay(70);} }
+static void fxPortal()      { ledsPulse(colorRGB(20, 20, 0), 3, 120, 90); } // yellow triple
 
 // --- HTTP helpers ---
 static String httpGet(const String& url, const String& headerKey = "", const String& headerVal = "", int* codeOut=nullptr) {
@@ -145,7 +105,41 @@ static bool writeUriNdef(const String& uri) {
   return true;
 }
 
-// --- Main ---
+// --- Wi-Fi connect with timeout
+static bool connectWiFi(const WriterConfig &cfg, uint32_t timeoutMs = 15000) {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfg.wifiSsid.c_str(), cfg.wifiPass.c_str());
+  Serial.printf("[WiFi] Connecting to '%s'", cfg.wifiSsid.c_str());
+  uint32_t start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+    delay(300); Serial.print(".");
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
+    fxWifiOK();
+    return true;
+  }
+  Serial.println("\n[WiFi] Failed to connect.");
+  return false;
+}
+
+static void maybeFactoryReset() {
+  pinMode(CONFIG_BUTTON_PIN, INPUT_PULLUP);
+  if (digitalRead(CONFIG_BUTTON_PIN) == LOW) {
+    Serial.println("[BOOT] Button held. Hold to factory reset...");
+    uint32_t t0 = millis();
+    while (digitalRead(CONFIG_BUTTON_PIN) == LOW) {
+      if (millis() - t0 > FACTORY_HOLD_MS) {
+        Serial.println("[BOOT] Factory reset triggered.");
+        clearConfig();
+        for (int i=0;i<3;i++){ fxError(); }
+        ESP.restart();
+      }
+      delay(20);
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -157,13 +151,32 @@ void setup() {
   buzzerInit();
   fxBoot();
 
-  // WiFi
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("[WiFi] Connecting");
-  while (WiFi.status() != WL_CONNECTED) { delay(250); Serial.print("."); }
-  Serial.printf("\n[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
-  fxWifiOK();
+  maybeFactoryReset();
+
+  // Load config (or defaults)
+  WriterConfig cfg;
+  bool ok = loadConfig(cfg);
+  if (!ok) {
+    cfg.wifiSsid = DEFAULT_WIFI_SSID;
+    cfg.wifiPass = DEFAULT_WIFI_PASS;
+    cfg.baseUrl  = DEFAULT_BASE_URL;
+    cfg.deviceKey= DEFAULT_DEVICE_KEY;
+  }
+
+  // If button held at boot (short) or no baseUrl/deviceKey, enter config portal
+  bool needPortal = (digitalRead(CONFIG_BUTTON_PIN) == LOW) || cfg.baseUrl.length()==0 || cfg.deviceKey.length()==0;
+  if (needPortal) {
+    Serial.println("[MODE] Config Portal (SoftAP). Open 192.168.4.1");
+    fxPortal();
+    runConfigPortal(cfg, 0); // blocks until save->reboot
+  }
+
+  // Connect Wi-Fi
+  if (!connectWiFi(cfg)) {
+    Serial.println("[MODE] Falling back to Config Portal due to Wi-Fi failure.");
+    fxPortal();
+    runConfigPortal(cfg, 0);
+  }
 
   // PN532
   Wire.begin();
@@ -176,11 +189,11 @@ void setup() {
     Serial.printf("[PN532] FW: 0x%08lx\n", versiondata);
   }
 
-  // Bootstrap (register device)
+  // Bootstrap
   {
-    String url = String(BASE_URL) + "/api/v1/bootstrap";
+    String url = cfg.baseUrl + "/api/v1/bootstrap";
     int code = 0;
-    String resp = httpGet(url, "x-device-key", DEVICE_KEY, &code);
+    String resp = httpGet(url, "x-device-key", cfg.deviceKey, &code);
     Serial.printf("[BOOTSTRAP] GET %s => %d\n", url.c_str(), code);
   }
 
@@ -190,24 +203,24 @@ void setup() {
 unsigned long lastPoll = 0;
 
 void loop() {
-  // Idle status
-  if (millis() - lastPoll < POLL_MS) {
-    delay(30);
-    return;
-  }
+  if (millis() - lastPoll < POLL_MS) { delay(30); return; }
   lastPoll = millis();
 
+  // Load config (in case it changed after OTA)
+  WriterConfig cfg;
+  loadConfig(cfg);
+
   // Poll for next job
-  String url = String(BASE_URL) + "/api/v1/device/next";
+  String url = cfg.baseUrl + "/api/v1/device/next";
   HTTPClient http;
   http.begin(url);
-  http.addHeader("x-device-key", DEVICE_KEY);
+  http.addHeader("x-device-key", cfg.deviceKey);
   int code = http.GET();
   String body = http.getString();
   http.end();
 
   if (code == 204) {
-    // No job—soft heartbeat
+    // No job—soft heartbeat on LED 0
     pixels.setPixelColor(0, colorRGB(0,0,8));
     pixels.show();
     return;
@@ -231,7 +244,7 @@ void loop() {
   if (ok) fxSuccess(); else fxError();
 
   // Ack
-  String ackUrl = String(BASE_URL) + "/api/v1/device/ack";
+  String ackUrl = cfg.baseUrl + "/api/v1/device/ack";
   String payload = String("{\"jobId\":\"") + jobId + "\",\"ok\":" + (ok ? "true" : "false") + "}";
   int ackCode = 0;
   String ackResp = httpPostJson(ackUrl, payload, &ackCode);
