@@ -31,3 +31,14 @@
 - Schema lives in `prisma/schema.prisma`; migration in `prisma/migrations/0001_init`.
 - If migrations fail at build, check `DATABASE_URL` is pooled + SSL. You can also run migrations once locally:
   - `npm i && cp .env.example .env` (fill DB) → `npx prisma migrate deploy`
+
+---
+
+## 🧾 Admin: Generate Payment (UI)
+- Go to **/admin** → Use the **Generate Payment** form
+- Enter **Terminal ID**, optional **Amount** & **Currency**
+- You’ll be redirected to the checkout page `/p/<terminalId>` to test the flow
+
+### Operator Tools on Checkout Page
+- If you are logged in as admin (cookie set via `/admin` login), the checkout page `/p/<terminalId>` shows an **Operator Tools** panel.
+- Use it to **Generate Payment** for that terminal without leaving the page.

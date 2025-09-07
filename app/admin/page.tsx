@@ -22,6 +22,14 @@ export default async function Admin() {
   return (
     <>
       <Section title="Admin" actions={<Link className="btn" href="/admin/devices">Manage Devices</Link>}>
+        <form method="post" action="/api/admin/sessions/create" className="grid md:grid-cols-6 gap-2 mb-4">
+  <input name="terminalId" placeholder="Terminal ID (e.g. STORE01-0001)" required className="border rounded-lg px-3 py-2 md:col-span-2" />
+  <input name="amount" placeholder="Amount (e.g. 0 or 500)" className="border rounded-lg px-3 py-2" />
+  <input name="currency" placeholder="USD" className="border rounded-lg px-3 py-2" />
+  <div className="md:col-span-2 self-center text-xs text-gray-500">Leave amount empty to use default</div>
+  <button className="btn md:col-span-1" type="submit">Generate Payment</button>
+</form>
+
         <p className="text-sm text-gray-600">Recent sessions</p>
         <div className="overflow-x-auto mt-3">
           <table className="table">
