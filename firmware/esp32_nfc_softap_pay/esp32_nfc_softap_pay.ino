@@ -1,5 +1,5 @@
 /**
- * ESP32 NFC Pay (Vercel-aligned, debug v7)
+ * ESP32 NFC Pay (Vercel-aligned, debug v6)
  * - Fixes "LEDC is not initialized" by explicitly configuring LEDC for the buzzer.
  * - Adds WS2812B (NeoPixel) status LED: pending (breathing yellow), paid (solid green + chime), error (blinking red).
  * - Keeps robust NTAG213 erase+rewrite verify flow and server checkoutUrl preference.
@@ -42,8 +42,6 @@ Adafruit_PN532 nfc(PN532_SS);
 WiFiClientSecure tls;
 HTTPClient http;
 String terminalId, sessionId, checkoutUrl;
-String lastSeenLatestId=""; 
-unsigned long lastLatestPoll=0;
 
 // NeoPixel
 Adafruit_NeoPixel strip(WS_COUNT, WS_PIN, NEO_GRB + NEO_KHZ800);
@@ -322,74 +320,6 @@ String getSessionStatus(const String& sid){
   return status;
 }
 
-bool getLatestPendingSessionId(const String& term, String& outId){
-  String url = joinUrl(BASE_URL, (String("/api/v1/sessions/latest?terminalId=")+term).c_str());
-  http.begin(tls, url);
-  setupHttp(http);
-  int code = http.GET();
-  String body = http.getString();
-  if (code==200){
-    String sid = extractJsonValue(body, "id");
-    if(sid.length()){ outId=sid; http.end(); return true; }
-  } else {
-    Serial.printf("[SESSION.LATEST] %s => %d\n", url.c_str(), code);
-    if (body.length()) Serial.printf("[SESSION.LATEST] body: %s\n", snippet(body).c_str());
-  }
-  http.end();
-  return false;
-  // --- SESSION list fallback when /latest is not available ---
-  if (true) {
-    String url2 = joinUrl(BASE_URL, "/api/v1/sessions");
-    http.begin(tls, url2);
-    setupHttp(http);
-    int code2 = http.GET();
-    String body2 = http.getString();
-    if (code2 == 200){
-      String idTmp;
-      if (extractLatestPendingFromSessionsList(body2, term, idTmp)){
-        outId = idTmp; http.end(); return true;
-      }
-    } else {
-      Serial.printf("[SESSION.LIST] %s => %d\n", url2.c_str(), code2);
-      if (body2.length()) Serial.printf("[SESSION.LIST] body: %s\n", snippet(body2).c_str());
-    }
-    http.end();
-  }
-  // --- end fallback ---
-  return false;
-}
-
-
-// Fallback: scan /api/v1/sessions response (array) for latest pending for this terminal
-bool extractLatestPendingFromSessionsList(const String& json, const String& term, String& outId){
-  // naive scan: find the first object containing "terminalId":"<term>" and "status":"pending"
-  int pos = 0;
-  while (true){
-    int ti = json.indexOf(String("\"terminalId\":\"")+term+String("\""), pos);
-    if (ti < 0) return false;
-    // object start boundary: previous '{'
-    int objStart = json.lastIndexOf('{', ti);
-    int objEnd = json.indexOf('}', ti);
-    if (objStart < 0 || objEnd < 0) { pos = ti + 1; continue; }
-    String obj = json.substring(objStart, objEnd+1);
-    if (obj.indexOf("\"status\":\"pending\"") >= 0){
-      // grab id
-      int idKey = obj.indexOf("\"id\":\"");
-      if (idKey >= 0){
-        int idStart = idKey + 7; // len of "id":"
-        int idEnd = obj.indexOf("\"", idStart);
-        if (idEnd > idStart){
-          outId = obj.substring(idStart, idEnd);
-          return true;
-        }
-      }
-    }
-    pos = ti + 1;
-  }
-}
-
-
-
 // ====== Indicators / main loop ======
 void applyVisuals(){
   switch (payState){
@@ -414,7 +344,7 @@ void setup(){
   pinMode(FACTORY_PIN, INPUT);
 
   Serial.begin(115200); delay(50);
-  Serial.println("\nESP32 NFC Pay (Vercel-aligned, debug v7)");
+  Serial.println("\nESP32 NFC Pay (Vercel-aligned, debug v6)");
   Serial.printf("[CONF] BASE_URL=%s\n", BASE_URL);
 
   // Buzzer LEDC init (prevents "LEDC is not initialized")
@@ -479,16 +409,12 @@ void setup(){
   if (payState != PayState::ERROR) payState = PayState::PENDING;
 }
 
-
 unsigned long lastPoll = 0;
-unsigned long lastListPoll = 0;
-String rememberedPendingId = "";
-
 void loop(){
   wifi_prov::loop();
   applyVisuals();
 
-  // Poll payment status every 1.2s for the active sessionId
+  // Poll payment status every 1.2s
   unsigned long now = millis();
   if (now - lastPoll >= 1200 && sessionId.length()){
     lastPoll = now;
@@ -501,59 +427,4 @@ void loop(){
       payState = PayState::ERROR;
     }
   }
-
-  // Poll the sessions list every 2s to detect a new pending session created by Operator Tools
-  if (now - lastListPoll >= 2000 && terminalId.length()){
-    lastListPoll = now;
-    String url2 = joinUrl(BASE_URL, "/api/v1/sessions");
-    http.begin(tls, url2);
-    setupHttp(http);
-    int code2 = http.GET();
-    String body2 = http.getString();
-    if (code2 == 200){
-      String newestId = "";
-      int pos = 0;
-      while (true){
-        int ti = body2.indexOf(String("\"terminalId\":\"")+terminalId+String("\""), pos);
-        if (ti < 0) break;
-        int objStart = body2.lastIndexOf('{', ti);
-        int objEnd = body2.indexOf('}', ti);
-        if (objStart < 0 || objEnd < 0) { pos = ti + 1; continue; }
-        String obj = body2.substring(objStart, objEnd+1);
-        if (obj.indexOf("\"status\":\"pending\"") >= 0){
-          int idKey = obj.indexOf("\"id\":\"");
-          if (idKey >= 0){
-            int s = idKey + 7;
-            int e = obj.indexOf("\"", s);
-            if (e > s) { newestId = obj.substring(s, e); break; }
-          }
-        }
-        pos = ti + 1;
-      }
-      if (newestId.length()){
-        if (newestId != sessionId && newestId != rememberedPendingId){
-          Serial.printf("[SESSION.SCAN] New pending session: %s\n", newestId.c_str());
-          String urlToWrite = checkoutUrl.length() ? fixCheckoutUrl(checkoutUrl)
-                                                   : joinUrl(BASE_URL, (String("/p/")+terminalId).c_str());
-          payState = PayState::WRITING;
-          bool ok = writeNdefUrlVerified(urlToWrite);
-          if(ok){
-            Serial.printf("[NDEF] wrote & verified %s\n", urlToWrite.c_str());
-            sessionId = newestId;
-            rememberedPendingId = newestId;
-            payState = PayState::PENDING;
-          } else {
-            Serial.println("[NDEF] auto write failed");
-            payState = PayState::ERROR;
-          }
-        }
-      }
-    } else {
-      Serial.printf("[SESSION.LIST] %s => %d\n", url2.c_str(), code2);
-      if (body2.length()) Serial.printf("[SESSION.LIST] body: %s\n", snippet(body2).c_str());
-    }
-    http.end();
-  }
 }
-
-

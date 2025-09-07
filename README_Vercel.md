@@ -57,10 +57,14 @@
 - The SoftAP provisioning page now lets you save an optional **Store Code**. The firmware will pass this as `X-Store-Code` during bootstrap.
 
 
-## Auto-write on "Generate Payment"
+## Pending Sessions — How it works
+- Only the **newest** pending session for a terminal can be approved.
+- When you approve a session, **older pending sessions are automatically canceled**.
+- Use **Pending Session Manager** on `/p/{terminalId}` (visible when logged in as admin) to:
+  - See all pending sessions for that terminal (newest highlighted).
+  - Cancel specific older entries or **Cancel All Older Pending** in one click.
 
-- When you generate a payment from **/p/[terminalId] → Operator Tools → Generate Payment**, the ESP32 now polls a new endpoint `/api/v1/sessions/latest` and will automatically write the checkout URL to the NFC tag and start tracking that session.
-- Firmware expects these headers on all `/api/v1/*` calls:
-  - `X-API-Key: <API_KEY>`
-  - `X-Device-Id: <device MAC>`
-- Make sure `API_KEY` is set in your Vercel project env vars, and that your device is enrolled in **Admin → Devices**.
+## Device behaviour (ESP32)
+- Device polls the sessions list; it only acts on the newest pending ID.
+- After a session is paid, there are no older pendings left (they get canceled), so the device won’t step through old ones.
+
