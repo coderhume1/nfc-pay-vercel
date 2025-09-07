@@ -8,6 +8,7 @@
 #include <Adafruit_PN532.h>
 
 // -------- Pins --------
+#define FACTORY_PIN 34  // tie to GND on boot for factory reset (use external pull-up to 3.3V)
 #define LED_PIN     2
 #define BUZZER_PIN  15
 
@@ -27,7 +28,7 @@ const char* AP_PASS   = "nfcsetup";
 
 // -------- Preferences --------
 Preferences prefs;
-String wifiSsid, wifiPass;
+String wifiSsid, wifiPass, storeCode;
 
 // -------- SoftAP --------
 WebServer server(80);
@@ -37,10 +38,10 @@ String htmlIndex() {
   String s = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'/>"
              "<style>body{font-family:system-ui;padding:20px}input,button{padding:8px;margin:4px;width:100%;max-width:400px}"
              "label{display:block;margin-top:8px}</style></head><body>";
-  s += "<h2>NFC-PAY Wi-Fi Setup</h2>";
+  s += "<h2>NFC-PAY Wi-Fi Setup</h2><p>Device: "' + WiFi.macAddress() + '" — Factory reset: hold pin 34 LOW for 3s at boot.</p>";
   s += "<form method='POST' action='/save'>";
   s += "<label>SSID</label><input name='ssid'/>";
-  s += "<label>Password</label><input name='pass' type='password'/>";
+  s += "<label>Password</label><input name='pass' type='password'/><label>Store Code (optional, e.g. STORE01)</label><input name='store'/>";
   s += "<button type='submit'>Save & Reboot</button>";
   s += "</form>";
   s += "<hr/><form method='POST' action='/factory-reset'><button>Factory Reset</button></form>";
@@ -53,6 +54,7 @@ void handleSave(){
   if(server.hasArg("ssid") && server.hasArg("pass")){
     prefs.putString("ssid", server.arg("ssid"));
     prefs.putString("pass", server.arg("pass"));
+    if(server.hasArg("store")) prefs.putString("store", server.arg("store"));
     server.send(200, "text/plain", "Saved. Rebooting...");
     delay(800);
     ESP.restart();
@@ -140,6 +142,7 @@ bool httpsGet(const String& path, String& out){
   if(!http.begin(client, url)) return false;
   http.addHeader("X-API-Key", API_KEY);
   http.addHeader("X-Device-Id", WiFi.macAddress());
+  if(storeCode.length()>0) http.addHeader("X-Store-Code", storeCode);
   int code = http.GET();
   if(code>0){ out = http.getString(); }
   http.end();
@@ -189,6 +192,20 @@ void setup(){
 
   wifiSsid = prefs.getString("ssid", "");
   wifiPass = prefs.getString("pass", "");
+  storeCode = prefs.getString("store", "");
+
+  
+// Factory reset button (GPIO34 input-only; needs external pull-up)
+pinMode(FACTORY_PIN, INPUT);
+unsigned long t0 = millis();
+bool lowDetected = digitalRead(FACTORY_PIN)==LOW;
+while(lowDetected && millis()-t0 < 3000) { delay(10); lowDetected = digitalRead(FACTORY_PIN)==LOW; }
+if(lowDetected){
+  Serial.println("[FACTORY] Triggered. Clearing saved Wi-Fi & store and rebooting...");
+  prefs.clear();
+  delay(300);
+  ESP.restart();
+}
 
   // NFC init
   pinMode(PN532_RST, OUTPUT);

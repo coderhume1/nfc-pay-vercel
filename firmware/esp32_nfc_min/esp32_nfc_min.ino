@@ -6,6 +6,7 @@
 #include <Adafruit_PN532.h>
 
 #define LED_PIN 2
+#define FACTORY_PIN 34  // hold LOW at boot for reset message (no stored creds in minimal sketch)
 #define BUZZER_PIN 15
 
 // PN532 SPI
@@ -94,6 +95,13 @@ bool httpsPostJson(const String& path, const String& body, String& out){
 String terminalId, sessionId, checkoutUrl;
 
 void setup(){
+  pinMode(FACTORY_PIN, INPUT);
+  if(digitalRead(FACTORY_PIN)==LOW){
+    // In minimal sketch we don't store creds, so just notify
+    Serial.begin(115200);
+    Serial.println("[FACTORY] Detected (minimal). No stored settings to clear.");
+    delay(1000);
+  }
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   Serial.begin(115200);

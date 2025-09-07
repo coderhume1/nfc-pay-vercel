@@ -42,3 +42,16 @@
 ### Operator Tools on Checkout Page
 - If you are logged in as admin (cookie set via `/admin` login), the checkout page `/p/<terminalId>` shows an **Operator Tools** panel.
 - Use it to **Generate Payment** for that terminal without leaving the page.
+
+## 🧼 Factory Reset (ESP32)
+- **Hardware**: Wire a momentary button from **GPIO 34** to **GND**, use an **external pull‑up** (GPIO 34 is input-only).
+- **Trigger**: Hold the button **LOW for 3 seconds at boot** → device clears saved Wi‑Fi & store code and reboots.
+- **Portal reset**: SoftAP page also has a **Factory Reset** button.
+
+## 🏪 Auto‑Enroll: Stores & Devices
+- **Devices**: `GET /api/v1/bootstrap` upserts a `Device` row keyed by `X-Device-Id` (ESP32 MAC).
+- **Stores**: Send `X-Store-Code: STORE01` (or use `?store=STORE01`). If it’s a new store, a `TerminalSequence` row is created automatically.
+- **Terminal IDs**: The next terminal number is assigned per store (e.g., `STORE01-0001`, padding configured via `TERMINAL_PAD`; optional prefix via `TERMINAL_PREFIX`).
+
+## 📶 SoftAP Store Code
+- The SoftAP provisioning page now lets you save an optional **Store Code**. The firmware will pass this as `X-Store-Code` during bootstrap.
