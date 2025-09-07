@@ -34,9 +34,75 @@ String wifiSsid, wifiPass, storeCode;
 WebServer server(80);
 bool apMode = false;
 
+
 String htmlIndex() {
   String s = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'/>"
-             "<style>body{font-family:system-ui;padding:20px}input,button{padding:8px;margin:4px;width:100%;max-width:400px}"
+             "<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,sans-serif;background:#f6f7fb;color:#111;padding:24px;margin:0;}"
+             ".card{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(20,20,50,.08);padding:20px;}"
+             "h1{font-size:20px;margin:0 0 10px}h2{font-size:16px;margin:16px 0 8px;color:#374151}"
+             "label{display:block;font-size:12px;color:#6b7280;margin:12px 0 6px}"
+             "input,select,button{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font-size:14px;outline:none;}"
+             "input:focus,select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);}"
+             ".row{display:grid;grid-template-columns:1fr 1fr;gap:12px}"
+             ".btn{background:#2563eb;color:#fff;border:none;cursor:pointer}"
+             ".btn:disabled{opacity:.7;cursor:not-allowed}"
+             ".muted{color:#6b7280;font-size:12px}"
+             ".top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}"
+             ".pill{display:inline-flex;align-items:center;gap:8px;border:1px solid #e5e7eb;border-radius:999px;padding:6px 10px;background:#f9fafb;font-size:12px;color:#374151}"
+             ".right{display:flex;gap:8px}"
+             ".grid{display:grid;gap:12px}"
+             ".wifi-row{display:flex;align-items:center;justify-content:space-between;gap:8px}"
+             ".bars{display:inline-block;width:18px;height:12px;background:linear-gradient(90deg,#e5e7eb 20%,transparent 20% 40%,#e5e7eb 40% 60%,transparent 60% 80%,#e5e7eb 80%);border-radius:3px}"
+             ".ok{color:#059669} .warn{color:#f59e0b} .err{color:#dc2626}"
+             ".hr{height:1px;background:#e5e7eb;margin:16px 0}"
+             ".actions{display:flex;gap:8px;flex-wrap:wrap}"
+             ".inline{display:flex;gap:8px;align-items:center}"
+             "</style></head><body>";
+  s += "<div class='card'>";
+  s += "<div class='top'><h1>NFC‑PAY Wi‑Fi Setup</h1><span class='pill'>Device: ";
+  s += WiFi.macAddress();
+  s += "</span></div>";
+  s += "<p class='muted'>If your phone warns there’s no Internet, stay connected. Use <b>http://192.168.4.1</b> (not https).</p>";
+  s += "<div class='hr'></div>";
+  s += "<form method='POST' action='/save' class='grid'>";
+  s += "<div><label>Wi‑Fi network</label><select id='ssidSelect'><option value=''>— Select network —</option></select></div>";
+  s += "<div class='inline'><input id='ssidInput' name='ssid' placeholder='Or type SSID manually'/>";
+  s += "<button type='button' class='btn' id='refreshBtn'>Refresh</button></div>";
+  s += "<div class='row'><div><label>Password</label><div class='inline'><input id='passInput' name='pass' type='password' placeholder='Wi‑Fi password'/><button type='button' id='showBtn'>Show</button></div></div>";
+  s += "<div><label>Store Code (optional)</label><input id='storeInput' name='store' placeholder='e.g. STORE01'/></div></div>";
+  s += "<div class='actions'><button class='btn' type='submit'>Save & Reboot</button><button formaction='/factory-reset' formmethod='POST' class='btn' style='background:#ef4444'>Factory Reset</button></div>";
+  s += "<p class='muted'>Factory reset also available via hardware: hold <b>GPIO34</b> LOW for 3s at boot.</p>";
+  s += "</form>";
+  s += "</div>";
+  s += "<script>\
+  const sel = document.getElementById('ssidSelect');\
+  const inSsid = document.getElementById('ssidInput');\
+  const inPass = document.getElementById('passInput');\
+  const btnRefresh = document.getElementById('refreshBtn');\
+  const btnShow = document.getElementById('showBtn');\
+  btnShow.addEventListener('click', ()=>{ inPass.type = (inPass.type==='password'?'text':'password'); });\
+  sel.addEventListener('change', ()=>{ inSsid.value = sel.value; });\
+  async function load(){\
+    btnRefresh.disabled = true;\
+    try{\
+      const r = await fetch('/scan');\
+      const j = await r.json();\
+      sel.innerHTML = '<option value=\"\">— Select network —</option>';\
+      j.aps.forEach(ap=>{\
+        const opt = document.createElement('option');\
+        opt.value = ap.ssid; opt.textContent = ap.ssid + '  ('+ ap.rssi +' dBm' + (ap.secure ? ', 🔒' : ', 🔓') + ')';\
+        sel.appendChild(opt);\
+      });\
+    }catch(e){}\
+    btnRefresh.disabled = false;\
+  }\
+  btnRefresh.addEventListener('click', load);\
+  load();\
+  </script>";
+  s += "</body></html>";
+  return s;
+}
+input,button{padding:8px;margin:4px;width:100%;max-width:400px}"
              "label{display:block;margin-top:8px}</style></head><body>";
   s += "<h2>NFC-PAY Wi-Fi Setup</h2><p>Device: "' + WiFi.macAddress() + '" — Factory reset: hold pin 34 LOW for 3s at boot.</p>";
   s += "<form method='POST' action='/save'>";
@@ -69,14 +135,33 @@ void handleFactory(){
   ESP.restart();
 }
 
+void handleScan(){
+  int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/false);
+  String out = "{\"aps\":[";
+  for(int i=0;i<n;i++){
+    if(i) out += ",";
+    String ssid = WiFi.SSID(i);
+    long rssi = WiFi.RSSI(i);
+    bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    // escape quotes in SSID
+    ssid.replace("\"","\\\"");
+    out += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(rssi) + ",\"secure\":" + (secure ? "true" : "false") + "}";
+  }
+  out += "]}";
+  server.sendHeader("Cache-Control","no-store");
+  server.send(200, "application/json", out);
+}
+
+
 void startAP(){
   String mac = WiFi.macAddress();
   mac.replace(":", "");
   String ssid = "NFC-PAY-Setup-" + mac.substring(mac.length()-4);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ssid.c_str(), AP_PASS);
   IPAddress ip = WiFi.softAPIP();
   server.on("/", handleIndex);
+  server.on("/scan", handleScan);
   server.on("/save", HTTP_POST, handleSave);
   server.on("/factory-reset", HTTP_POST, handleFactory);
   server.begin();
