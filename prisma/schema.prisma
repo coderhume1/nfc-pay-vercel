@@ -1,10 +1,22 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Device {
+  /// deviceId (e.g., ESP32 MAC)
+  id         String     @id
+  terminalId String
+  storeCode  String?
+  lastSeenAt DateTime?
+  writeJobs  WriteJob[]
+
+  @@index([terminalId])
 }
 
 model Session {
@@ -19,18 +31,17 @@ model Session {
   @@index([terminalId])
 }
 
-model Device {
-  deviceId   String   @id
-  storeCode  String
-  terminalId String
-  amount     Int      @default(0)
-  currency   String   @default("USD")
-  status     String   @default("new")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
+model WriteJob {
+  id          String   @id @default(uuid())
+  deviceId    String
+  terminalId  String
+  url         String
+  sessionId   String?
+  status      String   @default("pending") // pending | completed | expired
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
 
-model TerminalSequence {
-  storeCode String @id
-  last      Int    @default(0)
+  device Device @relation(fields: [deviceId], references: [id])
+
+  @@index([deviceId, status])
 }
