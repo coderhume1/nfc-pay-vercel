@@ -1,46 +1,35 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireApiKey } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { getEnv } from "@/lib/env";
-import { nextTerminalForStore } from "@/lib/terminals";
-export const runtime = "nodejs";
+// app/api/v1/bootstrap/route.ts
+import { NextResponse } from "next/server";
+import { prisma } from "../../../../src/lib/prisma";
 
-export async function GET(req: NextRequest) {
-  const unauth = requireApiKey(req);
-  if (unauth) return unauth;
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const deviceKey = req.headers.get("x-device-key") || url.searchParams.get("deviceKey") || process.env.DEVICE_KEY;
+    const deviceName = req.headers.get("x-device-name") || url.searchParams.get("deviceName") || "ESP32 Writer";
 
-  const { searchParams } = new URL(req.url);
-  const qDevice = (searchParams.get("deviceId") || "").trim();
-  const headerDevice = req.headers.get("x-device-id") || "";
-  const deviceId = (qDevice || headerDevice || "UNKNOWN").toUpperCase();
-  const storeCode = (req.headers.get("x-store-code") || searchParams.get("store") || getEnv().DEFAULT_STORE_CODE).toUpperCase();
+    if (!deviceKey) {
+      return NextResponse.json({ ok: false, error: "Missing deviceKey" }, { status: 400 });
+    }
 
-  let dev = await prisma.device.findUnique({ where: { deviceId } });
-  let autoEnrolled = false;
-  if (!dev) {
-    autoEnrolled = true;
-    const terminalId = await nextTerminalForStore(storeCode);
-    dev = await prisma.device.create({
-      data: {
-        deviceId,
-        storeCode,
-        terminalId,
-        amount: getEnv().DEFAULT_AMOUNT,
-        currency: getEnv().DEFAULT_CURRENCY,
-        status: "active",
-      },
+    const device = await prisma.device.upsert({
+      where: { key: deviceKey },
+      create: { key: deviceKey, name: deviceName },
+      update: { name: deviceName },
     });
+
+    // Touch lastSeen via a write op (updatedAt runs on update)
+    await prisma.device.update({ where: { id: device.id }, data: { name: device.name } });
+
+    return NextResponse.json({
+      ok: true,
+      deviceId: device.id,
+      deviceKey: device.key,
+      baseUrl: process.env.BASE_URL,
+      message: "Bootstrap OK",
+    });
+  } catch (err: any) {
+    console.error("bootstrap error", err);
+    return NextResponse.json({ ok: false, error: "Internal error" }, { status: 500 });
   }
-
-  const checkoutUrl = `${getEnv().PUBLIC_BASE_URL}/p/${dev.terminalId}`;
-
-  return NextResponse.json({
-    deviceId: dev.deviceId,
-    storeCode: dev.storeCode,
-    terminalId: dev.terminalId,
-    amount: dev.amount,
-    currency: dev.currency,
-    checkoutUrl,
-    autoEnrolled,
-  });
 }
