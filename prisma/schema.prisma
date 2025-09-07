@@ -1,22 +1,10 @@
-// prisma/schema.prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model Device {
-  /// deviceId (we use WiFi MAC from the ESP32)
-  id         String     @id @db.VarChar(32)
-  terminalId String
-  storeCode  String?
-  lastSeenAt DateTime?
-  writeJobs  WriteJob[]
-
-  @@index([storeCode])
+generator client {
+  provider = "prisma-client-js"
 }
 
 model Session {
@@ -31,17 +19,18 @@ model Session {
   @@index([terminalId])
 }
 
-model WriteJob {
-  id          String   @id @default(uuid())
-  deviceId    String
-  terminalId  String
-  url         String
-  sessionId   String?
-  status      String   @default("pending") // pending | completed | expired
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
+model Device {
+  deviceId   String   @id
+  storeCode  String
+  terminalId String
+  amount     Int      @default(0)
+  currency   String   @default("USD")
+  status     String   @default("new")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
 
-  device Device @relation(fields: [deviceId], references: [id])
-
-  @@index([deviceId, status])
+model TerminalSequence {
+  storeCode String @id
+  last      Int    @default(0)
 }
