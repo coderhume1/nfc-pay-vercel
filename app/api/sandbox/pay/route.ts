@@ -5,12 +5,11 @@ import { requireApiKey, isAdminAuthed } from "@/lib/auth";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  // Allow either admin cookie (web form) or API key (programmatic) to approve
   const authed = isAdminAuthed() || !requireApiKey(req);
   if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let sessionId = "";
   const ct = req.headers.get("content-type") || "";
+  let sessionId = "";
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => ({}));
     sessionId = String(body.sessionId || "");
@@ -23,25 +22,20 @@ export async function POST(req: NextRequest) {
   const s = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!s) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  // Enforce: only latest pending can be approved
+  // Only latest pending for the terminal can be approved
   const latest = await prisma.session.findFirst({
     where: { terminalId: s.terminalId, status: "pending" },
     orderBy: { createdAt: "desc" },
   });
-
   if (!latest || latest.id !== s.id) {
     return NextResponse.json({ error: "conflict", message: "Only the most recent pending session can be approved. Cancel older ones first." }, { status: 409 });
   }
 
-  // Mark this one paid
   await prisma.session.update({ where: { id: s.id }, data: { status: "paid" } });
-
-  // Auto-cancel any remaining older pending sessions for this terminal
   await prisma.session.updateMany({
     where: { terminalId: s.terminalId, status: "pending" },
     data: { status: "canceled" },
   });
 
-  // Redirect back to checkout page
   return NextResponse.redirect(new URL(`/p/${s.terminalId}`, req.url));
 }

@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const sessionId = String(form.get("sessionId") || "");
   const terminalId = String(form.get("terminalId") || "");
   if (!sessionId) return NextResponse.json({ error: "sessionId required" }, { status: 400 });
-  await prisma.session.update({ where: { id: sessionId }, data: { status: "canceled" } }).catch(()=>{});
+  await prisma.session.update({ where: { id: sessionId }, data: { status: "canceled" } }).catch(() => {});
   const back = terminalId ? `/p/${terminalId}` : "/admin";
   return NextResponse.redirect(new URL(back, req.url));
 }
